@@ -1,5 +1,7 @@
 import os
 import time
+
+import threading
 from pathlib import Path
 
 from tkinter import *
@@ -7,6 +9,7 @@ from tkinter import filedialog
 
 ####### UI #######
 originalFolder = ""
+currentlyOrganizing = ""
 def UI():
 # create box
     root = Tk()
@@ -59,12 +62,52 @@ def UI():
     timeDropdown.grid(column=2, row=2, sticky='w', padx=10, pady=10)
 
 
+    def loadingWindow():
+        cacheInfo = [
+            txt.get(),
+            txt1.get(),
+            txt2.get(),
+            dropdown.get()
+        ]
+        root.destroy()
+        loadingRoot = Tk()
+        loadingRoot.title("File Organizer")
+        loadingRoot.geometry("400x200+400+350")
+        loadingLbl = Label(loadingRoot, text="Organizing files...", font=("Arial Bold", 16))
+        loadingLbl.pack(pady=20)
+
+        currentlyOrganizingLbl = Label(loadingRoot, text=f"Currently organizing: {os.path.basename(cacheInfo[0])}", font=("Arial Bold", 12))
+        currentlyOrganizingLbl.pack(pady=10)
+
+        thread = threading.Thread(target=scanDirFiles, args=(os.scandir(cacheInfo[0]), cacheInfo[1], float(cacheInfo[2]), cacheInfo[3]))
+        
+        def updateCurrentlyOrganizingLbl():
+            currentlyOrganizingLbl.config(text=("Currently organizing: " + currentlyOrganizing))
+            if thread.is_alive():
+                loadingRoot.after(500, updateCurrentlyOrganizingLbl)
+            else:
+                loadingRoot.after(1000, loadingRoot.destroy)
+
+        thread.start()
+        updateCurrentlyOrganizingLbl()
+
+        loadingRoot.mainloop()
+        
+
+
 ## Run code
     def runCode():
-        global originalFolder 
-        originalFolder = txt.get()
-        scanDirFiles(os.scandir(txt.get()), txt1.get(), float(txt2.get()), dropdown.get())
-        root.destroy()
+        if txt.get() != "" and txt1.get() != "" and txt2.get() != "":
+            global originalFolder 
+            originalFolder = txt.get()
+            
+            loadingWindow()
+        elif txt.get() == txt1.get():
+            errorLbl = Label(root, text="You can't organize files into the same folder.", font=("Arial Bold", 12), fg="red")
+            errorLbl.grid(column=1, row=3, sticky='nsew', padx=10, pady=10)
+        else:
+            errorLbl = Label(root, text="Please fill in all fields.", font=("Arial Bold", 12), fg="red")
+            errorLbl.grid(column=1, row=3, sticky='nsew', padx=10, pady=10)
 
     runBtn = Button(root, text="Run", command=runCode)
     runBtn.grid(column=2, row=3, padx=5, pady=10)
@@ -79,12 +122,16 @@ def UI():
 def scanDirFiles(directoryFiles, destinationPath, timeThreshold, timeUnitThreshold):    
     for file in directoryFiles:
         if file.is_file():
+            updateCurrentlyOrganizing(file)
+
             timeSinceModification = time.time() - os.path.getmtime(file.path)
             timeUnit = "seconds"
             
             timeSinceModification, timeUnit = fixTimeUnit(timeSinceModification)
             
             organize(file, destinationPath, timeSinceModification, timeUnit, timeThreshold, timeUnitThreshold)
+
+            time.sleep(0.1)
 
         elif file.is_dir():
             scanDirFiles(os.scandir(file.path), destinationPath, timeThreshold, timeUnitThreshold)
@@ -109,7 +156,6 @@ def fixTimeUnit(timeSinceModification):
 def organize(file, destinationPath, timeSinceModification, timeUnit, timeThreshold, timeUnitThreshold):
     folderPath = findRelativePath(file, Path(originalFolder).parent)
     if timeSinceModification > timeThreshold and timeUnit == timeUnitThreshold:
-        print(f"destinationPath: {destinationPath}, folderPath: {folderPath}")
         if os.path.exists(f"{destinationPath}/old_{folderPath}"):
             os.rename(file.path, f"{destinationPath}/old_{folderPath}/{file.name}")
         else:
@@ -120,6 +166,10 @@ def findRelativePath(file, originalDir):
     relativePath = Path(os.path.dirname(file.path)).relative_to(originalDir)
     return relativePath
 
+
+def updateCurrentlyOrganizing(file):
+    global currentlyOrganizing
+    currentlyOrganizing = file.name
 
 
 # Run the file
